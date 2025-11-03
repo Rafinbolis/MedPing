@@ -1,16 +1,18 @@
-const express = require('express');
-const mongoose = require('mongoose');
-const app = express();
-const jwt = require( 'jsonwebtoken');
-const bcrypt = require('bcryptjs')
-const Usuario = require('./models/Usuario.js');
-const Remedio = require('./models/Remedios.js');
-const {verifyToken} = require('./middleware/authMiddlewre.js');
+import express from 'express';
+import mongoose from 'mongoose';
+import jwt from 'jsonwebtoken';
+import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
-dotenv.config()
 
+import Usuario from './models/Usuario.js';
+import Remedio from './models/Remedios.js';
+import { verifyToken } from './middleware/authMiddlewre.js';
 
+dotenv.config(); // carrega as variáveis do .env
+
+const app = express();
 app.use(express.json());
+
 
 mongoose.connect(process.env.MONGO_URL)
     .then(()=> console.log('Conectado ao banco de dados'))
@@ -24,7 +26,7 @@ app.get('/', (req, res) =>{
 
 
 //Criar remedios
-app.post('/remedios', async (req, res) => {
+app.post('/remedios',verifyToken, async (req, res) => {
     try{
         const novoRemedio = new Remedio({
             ...req.body,
@@ -37,19 +39,13 @@ app.post('/remedios', async (req, res) => {
     }
 });
 
-// criar usuário 
-app.post('/usuarios', async (req, res) => {
-    const novoUsuario = new Usuario(req.body);
-    await novoUsuario.save();
-    res.json({message: 'Usuario criado com sucesso!', usuario: novoUsuario});
-});
 
 //listar usuarios
-app.get('/usuarios', async (req, res) => {
+app.post('/usuarios', async (req, res) => {
     try {
         const {nome, email, senha, idade} = req.body;
         const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(senha, salt);
+        const hashedPassword = await bcrypt.hash(senha.toString(), salt);
         const novoUsuario = new Usuario ({
             nome,
             email,
@@ -77,13 +73,12 @@ app.get('/remedios', verifyToken, async (req, res) =>{
 app.post('/login', async (req, res) => {
     try {
         const { email, senha} = req.body;
-
         const  user = await Usuario.findOne({ email });
-        if (!user) return res.status(400).json({message: 'Usuario não encontrado(a)'});
-        
-        const validPassword = await bcrypt.compare(senha, Usuario.senha );
-        if (!validPassword) return res.status(400).json({message: "Senha incorreta, tente de novo "});
 
+        if (!user) return res.status(400).json({message: 'Usuario não encontrado(a)!'});
+        
+        const validPassword = await bcrypt.compare(senha, user.senha );
+        if (!validPassword) return res.status(400).json({message: "Senha incorreta, tente de novo "});
         //gera um token JWT 
         const  token = jwt.sign(
             { id: user._id, email: user.email},

@@ -1,13 +1,13 @@
-const mongoose = require('mongoose');
-const Usuario = require('./Usuario');
+import mongoose from 'mongoose';
+import Usuario from './Usuario.js';
 
-const RemedioSchema = new mongoose.Schema ({
+export const RemedioSchema = new mongoose.Schema ({
     nomeRemedio: String,
     dosagem: String,
     horarioInicial: String,
     intervalo: String, 
     quantidadeInicial: String,
-    usuarioId: {type: mongoose.Schema.Types.ObjectId, ref: 'Usuario', required: true}
+    usuarioId: {type: mongoose.Schema.Types.ObjectId, ref: Usuario, required: true}
 });
 
-module.exports = mongoose.model('Remdio', RemedioSchema);
+export default mongoose.model('Remedio', RemedioSchema);
