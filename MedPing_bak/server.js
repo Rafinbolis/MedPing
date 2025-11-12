@@ -3,6 +3,8 @@ import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
+import SerialPort from "serialport";
+import  ReadlineParser  from 'serialport';
 
 import Usuario from './models/Usuario.js';
 import Remedio from './models/Remedios.js';
@@ -23,7 +25,14 @@ app.get('/', (req, res) =>{
     res.send('Servidor rodando com Expres e MongoDB');
 });
 
+//intreração com o arduino
+//trocar pela porta do arduino depois 
+const port = new SerialPort({path:"com3", baudRete:9600});
+const parser = port.pipe(new RedlineParser ({delimiter: "\r\n"}));
 
+parser.on("data", (data) =>{
+    console.log("Mensagem no Arduino:", data);
+});
 
 //Criar remedios
 app.post('/remedios',verifyToken, async (req, res) => {
