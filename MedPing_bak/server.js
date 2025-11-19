@@ -13,14 +13,100 @@ import { verifyToken } from './middleware/authMiddlewre.js';
 
 dotenv.config(); // carrega as variáveis do .env
 
+// Validação de variáveis de ambiente obrigatórias
+const requiredEnvVars = ['MONGO_URL', 'JWT_SECRET'];
+const missingEnvVars = requiredEnvVars.filter((varName) => !process.env[varName]);
+
+if (missingEnvVars.length > 0) {
+  console.error('❌ ERRO: Variáveis de ambiente obrigatórias não configuradas:');
+  missingEnvVars.forEach((varName) => {
+    console.error(`   - ${varName}`);
+  });
+  console.error('\n📝 Para configurar na Vercel:');
+  console.error('   1. Acesse o painel da Vercel (https://vercel.com)');
+  console.error('   2. Vá em Settings > Environment Variables');
+  console.error('   3. Adicione as variáveis:', requiredEnvVars.join(', '));
+  console.error('\n⚠️  O servidor pode não funcionar corretamente sem essas variáveis!');
+}
+
 const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Middleware para verificar variáveis de ambiente em produção
+app.use((req, res, next) => {
+  if (!process.env.MONGO_URL || !process.env.JWT_SECRET) {
+    return res.status(500).json({
+      message: 'Servidor não configurado corretamente. Variáveis de ambiente ausentes.',
+      error: 'Missing environment variables',
+      required: requiredEnvVars,
+      missing: missingEnvVars,
+    });
+  }
+  next();
+});
 
-mongoose.connect(process.env.MONGO_URL)
-    .then(()=> console.log('Conectado ao banco de dados'))
-    .catch(err => console.error('Erro ao conectar', err));
+// Configurações de conexão do MongoDB com timeout
+const mongooseOptions = {
+  serverSelectionTimeoutMS: 10000, // Timeout de 10 segundos para seleção do servidor
+  socketTimeoutMS: 45000, // Timeout de 45 segundos para operações
+  connectTimeoutMS: 10000, // Timeout de 10 segundos para conexão inicial
+  maxPoolSize: 10, // Máximo de conexões no pool
+  minPoolSize: 1, // Mínimo de conexões no pool
+  retryWrites: true,
+  w: 'majority',
+};
+
+// Só tenta conectar se MONGO_URL estiver configurado
+if (process.env.MONGO_URL) {
+  mongoose.connect(process.env.MONGO_URL, mongooseOptions)
+    .then(() => {
+        console.log('✅ Conectado ao banco de dados MongoDB');
+        console.log('📊 Estado da conexão:', mongoose.connection.readyState);
+    })
+    .catch(err => {
+        console.error('❌ Erro ao conectar ao MongoDB:', err.message);
+        console.error('🔍 Verifique se:');
+        console.error('   1. A variável MONGO_URL está configurada na Vercel');
+        console.error('   2. A URL do MongoDB está correta');
+        console.error('   3. O MongoDB está acessível');
+        console.error('   4. As credenciais estão corretas');
+        console.error('   5. A conexão de internet está funcionando');
+    });
+} else {
+  console.error('❌ MONGO_URL não configurada. Não é possível conectar ao banco de dados.');
+}
+
+// Eventos de conexão do MongoDB
+mongoose.connection.on('connected', () => {
+    console.log('🔗 Mongoose conectado ao MongoDB');
+});
+
+mongoose.connection.on('error', (err) => {
+    console.error('❌ Erro na conexão do Mongoose:', err);
+});
+
+mongoose.connection.on('disconnected', () => {
+    console.warn('⚠️ Mongoose desconectado do MongoDB');
+});
+
+// Tratamento de erros não capturados
+process.on('SIGINT', async () => {
+    await mongoose.connection.close();
+    console.log('🔌 Conexão MongoDB fechada devido ao encerramento da aplicação');
+    process.exit(0);
+});
+
+// Middleware para verificar conexão com MongoDB
+const checkMongoConnection = (req, res, next) => {
+    if (mongoose.connection.readyState !== 1) {
+        return res.status(503).json({ 
+            message: 'Serviço temporariamente indisponível. Banco de dados não conectado.',
+            error: 'MongoDB connection not ready'
+        });
+    }
+    next();
+};
 
 // rota de teste
 app.get('/', (req, res) =>{
@@ -39,7 +125,7 @@ parser.on("data", (data) =>{
 });*/
 
 //Criar remedios
-app.post('/remedios', verifyToken, async (req, res) => {
+app.post('/remedios', verifyToken, checkMongoConnection, async (req, res) => {
     try {
         const {
             nomeRemedio,
@@ -70,9 +156,79 @@ app.post('/remedios', verifyToken, async (req, res) => {
     }
 });
 
+//Atualizar remedio
+app.put('/remedios/:id', verifyToken, checkMongoConnection, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const {
+            nomeRemedio,
+            dosagem,
+            vezesPorDia,
+            horarioInicial,
+            quantidadeInicial,
+        } = req.body;
+
+        const remedio = await Remedio.findOne({ _id: id, usuarioId: req.user.id })
+            .maxTimeMS(10000);
+
+        if (!remedio) {
+            return res.status(404).json({ message: 'Remédio não encontrado.' });
+        }
+
+        // Atualiza apenas os campos fornecidos
+        if (nomeRemedio !== undefined) remedio.nomeRemedio = nomeRemedio.toString().trim();
+        if (dosagem !== undefined) remedio.dosagem = dosagem.toString().trim();
+        if (vezesPorDia !== undefined) remedio.vezesPorDia = vezesPorDia.toString().trim();
+        if (horarioInicial !== undefined) remedio.horarioInicial = horarioInicial.toString().trim();
+        if (quantidadeInicial !== undefined) remedio.quantidadeInicial = quantidadeInicial.toString().trim();
+
+        await remedio.save();
+
+        res.json({ message: 'Remédio atualizado com sucesso!', remedio });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+//Deletar remedio
+app.delete('/remedios/:id', verifyToken, checkMongoConnection, async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const remedio = await Remedio.findOneAndDelete({ _id: id, usuarioId: req.user.id })
+            .maxTimeMS(10000);
+
+        if (!remedio) {
+            return res.status(404).json({ message: 'Remédio não encontrado.' });
+        }
+
+        res.json({ message: 'Remédio deletado com sucesso!' });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+//Obter remedio por ID
+app.get('/remedios/:id', verifyToken, checkMongoConnection, async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const remedio = await Remedio.findOne({ _id: id, usuarioId: req.user.id })
+            .maxTimeMS(10000)
+            .lean();
+
+        if (!remedio) {
+            return res.status(404).json({ message: 'Remédio não encontrado.' });
+        }
+
+        res.json(remedio);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
 
 //listar usuarios
-app.post('/usuarios', async (req, res) => {
+app.post('/usuarios', checkMongoConnection, async (req, res) => {
     try {
         const { nome, login, senha } = req.body;
 
@@ -81,10 +237,13 @@ app.post('/usuarios', async (req, res) => {
         }
 
         const normalizedLogin = login.toString().trim().toLowerCase();
-        const existingUser = await Usuario.findOne({ login: normalizedLogin });
+        
+        // Adiciona timeout explícito na query
+        const existingUser = await Usuario.findOne({ login: normalizedLogin })
+            .maxTimeMS(10000); // Timeout de 10 segundos para a query
 
         if (existingUser) {
-            return res.status(409).json({ message: 'Login já está em uso.' });
+            return res.status(409).json({ message: 'Login já está em uso. Escolha outro login.' });
         }
 
         const salt = await bcrypt.genSalt(10);
@@ -96,30 +255,46 @@ app.post('/usuarios', async (req, res) => {
             senha: hashedPassword,
         });
 
-        await novoUsuario.save();
+        // Tenta salvar - se houver erro de duplicata (índice único), captura
+        try {
+            await novoUsuario.save();
+        } catch (saveError) {
+            // Se for erro de duplicata (E11000), retorna erro 409
+            if (saveError.code === 11000 || saveError.name === 'MongoServerError') {
+                return res.status(409).json({ message: 'Login já está em uso. Escolha outro login.' });
+            }
+            // Se for outro erro, propaga
+            throw saveError;
+        }
 
         const { senha: _, ...usuarioSeguro } = novoUsuario.toObject();
 
         res.status(201).json({ message: 'Usuário criado com sucesso!', usuario: usuarioSeguro });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error('Erro ao criar usuário:', err);
+        res.status(500).json({ error: err.message || 'Erro ao criar usuário. Tente novamente.' });
     }
 });
 
 //listar remedios 
-app.get('/remedios', verifyToken, async (req, res) =>{
+app.get('/remedios', verifyToken, checkMongoConnection, async (req, res) =>{
     try{
-        const remedios = await Remedio.find({usuarioId: req.user.id}).sort({ nomeRemedio: 1 });
+        const remedios = await Remedio.find({usuarioId: req.user.id})
+            .sort({ nomeRemedio: 1 })
+            .maxTimeMS(10000) // Timeout de 10 segundos para a query
+            .lean(); // Usa lean() para melhor performance
         res.json(remedios)
     } catch(err){
         res.status(500).json({ error: err.message});
     }
 });
 
-app.get('/remedios/historico', verifyToken, async (req, res) => {
+app.get('/remedios/historico', verifyToken, checkMongoConnection, async (req, res) => {
     try {
         const historico = await Remedio.find({ usuarioId: req.user.id })
-            .sort({ createdAt: -1 });
+            .sort({ createdAt: -1 })
+            .maxTimeMS(10000) // Timeout de 10 segundos para a query
+            .lean(); // Usa lean() para melhor performance
         res.json(historico);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -127,7 +302,7 @@ app.get('/remedios/historico', verifyToken, async (req, res) => {
 });
 
 //login 
-app.post('/login', async (req, res) => {
+app.post('/login', checkMongoConnection, async (req, res) => {
     try {
         const { login, senha } = req.body;
 
@@ -135,7 +310,9 @@ app.post('/login', async (req, res) => {
             return res.status(400).json({ message: 'Login e senha são obrigatórios.' });
         }
 
-        const user = await Usuario.findOne({ login: login.toString().trim().toLowerCase() });
+        // Adiciona timeout explícito na query
+        const user = await Usuario.findOne({ login: login.toString().trim().toLowerCase() })
+            .maxTimeMS(10000); // Timeout de 10 segundos para a query
 
         if (!user) {
             return res.status(400).json({ message: 'Usuário não encontrado.' });
@@ -162,9 +339,12 @@ app.post('/login', async (req, res) => {
 });
 
 //usuario logado
-app.get('/auth/me', verifyToken, async (req, res) => {
+app.get('/auth/me', verifyToken, checkMongoConnection, async (req, res) => {
     try {
-        const usuario = await Usuario.findById(req.user.id).select('-senha');
+        // Adiciona timeout explícito na query
+        const usuario = await Usuario.findById(req.user.id)
+            .select('-senha')
+            .maxTimeMS(10000); // Timeout de 10 segundos para a query
 
         if (!usuario) {
             return res.status(404).json({ message: 'Usuário não encontrado.' });
