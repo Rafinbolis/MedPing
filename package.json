@@ -1,5 +1,13 @@
 {
   "dependencies": {
+    "-": "^0.0.1",
+    "expo": "^54.0.25",
+    "g": "^2.0.1",
+    "ngrok": "^5.0.0-beta.2",
     "serialport": "^13.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "~19.1.10",
+    "typescript": "~5.9.2"
   }
 }

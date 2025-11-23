@@ -208,6 +208,31 @@ app.delete('/remedios/:id', verifyToken, checkMongoConnection, async (req, res) 
     }
 });
 
+//listar remedios 
+app.get('/remedios', verifyToken, checkMongoConnection, async (req, res) =>{
+    try{
+        const remedios = await Remedio.find({usuarioId: req.user.id})
+            .sort({ nomeRemedio: 1 })
+            .maxTimeMS(10000) // Timeout de 10 segundos para a query
+            .lean(); // Usa lean() para melhor performance
+        res.json(remedios)
+    } catch(err){
+        res.status(500).json({ error: err.message});
+    }
+});
+
+app.get('/remedios/historico', verifyToken, checkMongoConnection, async (req, res) => {
+    try {
+        const historico = await Remedio.find({ usuarioId: req.user.id })
+            .sort({ createdAt: -1 })
+            .maxTimeMS(10000) // Timeout de 10 segundos para a query
+            .lean(); // Usa lean() para melhor performance
+        res.json(historico);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 //Obter remedio por ID
 app.get('/remedios/:id', verifyToken, checkMongoConnection, async (req, res) => {
     try {
@@ -276,30 +301,7 @@ app.post('/usuarios', checkMongoConnection, async (req, res) => {
     }
 });
 
-//listar remedios 
-app.get('/remedios', verifyToken, checkMongoConnection, async (req, res) =>{
-    try{
-        const remedios = await Remedio.find({usuarioId: req.user.id})
-            .sort({ nomeRemedio: 1 })
-            .maxTimeMS(10000) // Timeout de 10 segundos para a query
-            .lean(); // Usa lean() para melhor performance
-        res.json(remedios)
-    } catch(err){
-        res.status(500).json({ error: err.message});
-    }
-});
 
-app.get('/remedios/historico', verifyToken, checkMongoConnection, async (req, res) => {
-    try {
-        const historico = await Remedio.find({ usuarioId: req.user.id })
-            .sort({ createdAt: -1 })
-            .maxTimeMS(10000) // Timeout de 10 segundos para a query
-            .lean(); // Usa lean() para melhor performance
-        res.json(historico);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
 
 //login 
 app.post('/login', checkMongoConnection, async (req, res) => {
@@ -356,9 +358,8 @@ app.get('/auth/me', verifyToken, checkMongoConnection, async (req, res) => {
     }
 });
 
-/*porta de servidor LOCALHOST:3000
- const port = 3000;
- app.listen(port, () => console.log(`Servidor rodando na porta ${port}`));
-*/
+//*porta de servidor LOCALHOST:3000
+const port = 3000;
+app.listen(port, () => console.log(`Servidor rodando na porta ${port}`));
 
-export default app;
+
